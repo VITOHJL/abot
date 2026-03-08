@@ -2,7 +2,7 @@
   <img src="./abot_logo.png" alt="abot logo" width="420" />
   <h1>abot</h1>
   <p><strong>Agent Engineering Lab</strong></p>
-  <p>面向 Agent 工程实践的轻量、可控、可演进框架</p>
+  <p>A lightweight, controllable, and evolvable framework for practical agent engineering.</p>
 </div>
 
 <div align="center">
@@ -14,29 +14,29 @@
 
 <div align="center">
 
-[中文](./README.md) | [English](./README_en.md)
+[English](./README_en.md) | [中文](./README.md)
 
 </div>
 
 ---
 
-## 项目定位
+## Positioning
 
-`abot` 是一个聚焦 Agent 工程实验的框架，核心目标是把“能跑”升级为“可复现、可评估、可维护”。
+`abot` is a focused framework for agent engineering experiments.
 
-- 保留核心能力：agent loop、tools、skills、cron、heartbeat、MCP。
-- 保留高价值通道：CLI、Telegram、飞书、QQ（OneBot）。
-- 移除与当前研究目标弱相关的生态模块，降低复杂度与维护成本。
+- Keep the essential core: agent loop, tools, skills, cron, heartbeat, MCP.
+- Keep practical channels only: CLI, Telegram, Feishu (Lark), QQ (OneBot).
+- Remove low-value ecosystem integrations to reduce maintenance overhead.
 
-## 致谢与来源
+## Acknowledgment
 
-- `abot` 最初基于 [`HKUDS/nanobot`](https://github.com/HKUDS/nanobot) 分叉。
-- 感谢 nanobot 维护者与贡献者提供的架构基础和开源工作。
-- `abot` 当前沿着自身路线持续演进，重点聚焦 Agent 工程实验场景。
+- `abot` originally started as a fork of [`HKUDS/nanobot`](https://github.com/HKUDS/nanobot).
+- We appreciate nanobot maintainers and contributors for the open-source groundwork.
+- `abot` now follows its own roadmap focused on agent engineering practice.
 
-## 快速开始
+## Quick Start
 
-1. 安装
+1. Install
 
 ```bash
 git clone https://github.com/VITOHJL/abot.git
@@ -44,13 +44,13 @@ cd abot
 pip install -e .
 ```
 
-2. 初始化
+2. Initialize
 
 ```bash
 python -m abot onboard
 ```
 
-3. 配置模型（编辑 `~/.abot/config.json`）
+3. Configure model provider (`~/.abot/config.json`)
 
 ```json
 {
@@ -68,13 +68,13 @@ python -m abot onboard
 }
 ```
 
-4. CLI 对话
+4. Start CLI chat
 
 ```bash
 python -m abot agent
 ```
 
-## 通道配置
+## Channel Configuration
 
 ### Telegram
 
@@ -90,7 +90,7 @@ python -m abot agent
 }
 ```
 
-### 飞书
+### Feishu
 
 ```json
 {
@@ -105,7 +105,7 @@ python -m abot agent
 }
 ```
 
-### QQ（OneBot）
+### QQ (OneBot)
 
 ```json
 {
@@ -122,12 +122,12 @@ python -m abot agent
 }
 ```
 
-说明：
+Notes:
 
-- QQ 默认使用 OneBot 通道实现。
-- 推荐适配器：Lagrange.onebot / NapCat。
+- QQ uses the OneBot implementation by default.
+- Recommended adapters: Lagrange.onebot / NapCat.
 
-## 常用命令
+## Useful Commands
 
 ```bash
 python -m abot gateway
@@ -137,13 +137,13 @@ python -m abot provider login openai-codex
 python -m abot provider login github-copilot
 ```
 
-## 感谢贡献者
+## Thanks to Contributors
 
-即使目前贡献者还不多，我们依然认真感谢每一位参与者。
+Even with a small contributor base today, every contribution matters.
 
-### 当前贡献者
+### Current Contributor
 
-- [@VITOHJL](https://github.com/VITOHJL) - 项目维护者
+- [@VITOHJL](https://github.com/VITOHJL) - Maintainer
 
 <div align="center">
   <a href="https://github.com/VITOHJL/abot/graphs/contributors">
