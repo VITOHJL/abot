@@ -20,6 +20,20 @@
 
 ---
 
+<div align="center">
+
+[Quick Start](#quickstart-en) · [Engineering](#engineering-en) · [Channels](#channels-en) · [Commands](#commands-en) · [Acknowledgment](#ack-en)
+
+</div>
+
+| Module | Current choice |
+| --- | --- |
+| Core capabilities | `agent loop` / `tools` / `skills` / `cron` / `heartbeat` / `MCP` |
+| Focus channels | `CLI` / `Telegram` / `Feishu` / `QQ OneBot` |
+| Engineering target | A reproducible, measurable, maintainable agent experimentation framework |
+| Product direction | Reduce ecosystem noise and maximize control + iteration speed |
+
+<a id="positioning-en"></a>
 ## Positioning
 
 `abot` is a focused framework for agent engineering experiments.
@@ -28,12 +42,28 @@
 - Keep practical channels only: CLI, Telegram, Feishu (Lark), QQ (OneBot).
 - Remove low-value ecosystem integrations to reduce maintenance overhead.
 
+<a id="engineering-en"></a>
+## Agent Engineering Design (Problem -> Handling)
+
+| Engineering challenge | Current handling |
+| --- | --- |
+| Context growth in long conversations | Compression is token-budget driven: `budget = max_tokens_input - max_tokens - reserve`, with `compression_start_ratio` / `compression_target_ratio` as watermarks; history chunks are selected by token estimate and consolidated asynchronously in background tasks. |
+| Traceability after compression | Session messages are not destructively rewritten. A contiguous `_compressed_until` boundary is maintained, and a compressed view is built only for prompting; raw records remain while summaries are written to `memory/HISTORY.md` and `memory/MEMORY.md`. |
+| Inconsistent token accounting across providers | Prefer model `usage` (`total_tokens` or `prompt_tokens + completion_tokens`); fall back to provider-side token counter, then to `tiktoken` estimation. |
+| Durable session persistence and migration | Sessions are stored in `sessions/*.jsonl` (metadata header + message lines). The message model stays append-only, and legacy `~/.abot/sessions` files are auto-migrated when detected. |
+| Reliable memory updates | Memory writes are normalized via the `save_memory` tool-call contract, with defensive argument parsing for provider differences (dict/string/list). |
+| Safe and resilient tool execution | Tool arguments go through schema cast + validation, oversized tool results are truncated before persisting to session history, and `restrict_to_workspace` can scope filesystem/exec tools to workspace boundaries. |
+| Runtime control and cancellation | Each inbound message runs as an independent task; `/stop` cancels active session tasks, background compression, and subagents; MCP uses lazy connection with cleanup on failure and retry on later messages. |
+| Capability scaling without prompt bloat | Skills use progressive loading: skill summary in system prompt, on-demand `SKILL.md` reads, plus auto-injection for `always` skills. |
+
+<a id="ack-en"></a>
 ## Acknowledgment
 
 - `abot` originally started as a fork of [`HKUDS/nanobot`](https://github.com/HKUDS/nanobot).
 - We appreciate nanobot maintainers and contributors for the open-source groundwork.
 - `abot` now follows its own roadmap focused on agent engineering practice.
 
+<a id="quickstart-en"></a>
 ## Quick Start
 
 1. Install
@@ -74,9 +104,14 @@ python -m abot onboard
 python -m abot agent
 ```
 
+<a id="channels-en"></a>
 ## Channel Configuration
 
-### Telegram
+> [!TIP]
+> Enable only the channels you actively use to reduce operational and debugging overhead.
+
+<details>
+<summary><strong>Telegram</strong></summary>
 
 ```json
 {
@@ -90,7 +125,10 @@ python -m abot agent
 }
 ```
 
-### Feishu
+</details>
+
+<details>
+<summary><strong>Feishu</strong></summary>
 
 ```json
 {
@@ -105,7 +143,10 @@ python -m abot agent
 }
 ```
 
-### QQ (OneBot)
+</details>
+
+<details>
+<summary><strong>QQ (OneBot)</strong></summary>
 
 ```json
 {
@@ -122,11 +163,14 @@ python -m abot agent
 }
 ```
 
+</details>
+
 Notes:
 
 - QQ uses the OneBot implementation by default.
 - Recommended adapters: Lagrange.onebot / NapCat.
 
+<a id="commands-en"></a>
 ## Useful Commands
 
 ```bash
