@@ -22,7 +22,7 @@
 
 <div align="center">
 
-[Quick Start](#quickstart-en) · [Engineering](#engineering-en) · [Channels](#channels-en) · [Commands](#commands-en) · [Acknowledgment](#ack-en)
+[Engineering](#engineering-en) · [Acknowledgment](#ack-en) · [Quick Start](#quickstart-en) · [Channels](#channels-en) · [Commands](#commands-en)
 
 </div>
 
