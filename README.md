@@ -14,14 +14,11 @@
 
 ---
 
-## 📋 目录
+<div align="center">
 
-- [项目定位](#项目定位)
-- [快速开始](#快速开始)
-- [通道配置](#通道配置)
-- [常用命令](#常用命令)
-- [Agent 工程实现](#agent-工程实现)
-- [致谢](#致谢)
+[项目定位](#项目定位) · [快速开始](#快速开始) · [通道配置](#通道配置) · [常用命令](#常用命令) · [Agent 工程实现](#agent-工程实现) · [致谢](#致谢)
+
+</div>
 
 ---
 
@@ -40,9 +37,9 @@
 
 ### 设计理念
 
-- ✅ 保留核心能力：agent loop、tools、skills、cron、heartbeat、MCP
-- ✅ 保留高价值通道：CLI、Telegram、飞书、QQ（OneBot）
-- ✅ 移除与当前研究目标弱相关的生态模块，降低复杂度与维护成本
+- 保留核心能力：agent loop、tools、skills、cron、heartbeat、MCP
+- 保留高价值通道：CLI、Telegram、飞书、QQ（OneBot）
+- 移除与当前研究目标弱相关的生态模块，降低复杂度与维护成本
 
 ---
 
@@ -82,7 +79,7 @@ python -m abot onboard
 }
 ```
 
-> 💡 **获取 API Key**: [OpenRouter](https://openrouter.ai/keys) (推荐) | [Brave Search](https://brave.com/search/api/) (可选，用于网页搜索)
+> **获取 API Key**: [OpenRouter](https://openrouter.ai/keys) (推荐) | [Brave Search](https://brave.com/search/api/) (可选，用于网页搜索)
 
 ### 4. 开始对话
 
@@ -218,5 +215,5 @@ python -m abot provider login github-copilot
 ---
 
 <div align="center">
-  <sub>MIT License | Made with ❤️ by <a href="https://github.com/VITOHJL">VITOHJL</a></sub>
+  <sub>MIT License | Made by <a href="https://github.com/VITOHJL">VITOHJL</a></sub>
 </div>
