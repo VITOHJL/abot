@@ -57,7 +57,7 @@ def _render_table_box(table_lines: list[str]) -> str:
         return '  '.join(f'{c}{" " * (w - dw(c))}' for c, w in zip(cells, widths))
 
     out = [dr(rows[0])]
-    out.append('  '.join('鈹€' * w for w in widths))
+    out.append('  '.join('-' * w for w in widths))
     for row in rows[1:]:
         out.append(dr(row))
     return '\n'.join(out)
@@ -129,8 +129,8 @@ def _markdown_to_telegram_html(text: str) -> str:
     # 9. Strikethrough ~~text~~
     text = re.sub(r'~~(.+?)~~', r'<s>\1</s>', text)
 
-    # 10. Bullet lists - item -> 鈥?item
-    text = re.sub(r'^[-*]\s+', '鈥?', text, flags=re.MULTILINE)
+    # 10. Bullet lists: "- item" / "* item" -> "- item"
+    text = re.sub(r'^[-*]\s+', '- ', text, flags=re.MULTILINE)
 
     # 11. Restore inline code with HTML tags
     for i, code in enumerate(inline_codes):
@@ -419,7 +419,7 @@ class TelegramChannel(BaseChannel):
 
         user = update.effective_user
         await update.message.reply_text(
-            f"馃憢 Hi {user.first_name}! I'm abot.\n\n"
+            f"Hi {user.first_name}! I'm abot.\n\n"
             "Send me a message and I'll respond!\n"
             "Type /help to see available commands."
         )
@@ -429,10 +429,10 @@ class TelegramChannel(BaseChannel):
         if not update.message:
             return
         await update.message.reply_text(
-            "馃悎 abot commands:\n"
-            "/new 鈥?Start a new conversation\n"
-            "/stop 鈥?Stop the current task\n"
-            "/help 鈥?Show available commands"
+            "abot commands:\n"
+            "/new - Start a new conversation\n"
+            "/stop - Stop the current task\n"
+            "/help - Show available commands"
         )
 
     @staticmethod
@@ -670,4 +670,5 @@ class TelegramChannel(BaseChannel):
             return "".join(Path(filename).suffixes)
 
         return ""
+
 

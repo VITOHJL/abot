@@ -110,7 +110,7 @@ class WebFetchTool(Tool):
     """Fetch and extract content from a URL using Readability."""
 
     name = "web_fetch"
-    description = "Fetch URL and extract readable content (HTML 鈫?markdown/text)."
+    description = "Fetch URL and extract readable content (HTML -> markdown/text)."
     parameters = {
         "type": "object",
         "properties": {
@@ -179,4 +179,5 @@ class WebFetchTool(Tool):
         text = re.sub(r'</(p|div|section|article)>', '\n\n', text, flags=re.I)
         text = re.sub(r'<(br|hr)\s*/?>', '\n', text, flags=re.I)
         return _normalize(_strip_tags(text))
+
 

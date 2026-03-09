@@ -45,7 +45,7 @@ def mock_paths():
 
 
 def test_onboard_fresh_install(mock_paths):
-    """No existing config 鈥?should create from scratch."""
+    """No existing config - should create from scratch."""
     config_file, workspace_dir = mock_paths
 
     result = runner.invoke(app, ["onboard"])
@@ -60,7 +60,7 @@ def test_onboard_fresh_install(mock_paths):
 
 
 def test_onboard_existing_config_refresh(mock_paths):
-    """Config exists, user declines overwrite 鈥?should refresh (load-merge-save)."""
+    """Config exists, user declines overwrite - should refresh (load-merge-save)."""
     config_file, workspace_dir = mock_paths
     config_file.write_text('{"existing": true}')
 
@@ -75,7 +75,7 @@ def test_onboard_existing_config_refresh(mock_paths):
 
 
 def test_onboard_existing_config_overwrite(mock_paths):
-    """Config exists, user confirms overwrite 鈥?should reset to defaults."""
+    """Config exists, user confirms overwrite - should reset to defaults."""
     config_file, workspace_dir = mock_paths
     config_file.write_text('{"existing": true}')
 
@@ -88,7 +88,7 @@ def test_onboard_existing_config_overwrite(mock_paths):
 
 
 def test_onboard_existing_workspace_safe_create(mock_paths):
-    """Workspace exists 鈥?should not recreate, but still add missing templates."""
+    """Workspace exists - should not recreate, but still add missing templates."""
     config_file, workspace_dir = mock_paths
     workspace_dir.mkdir(parents=True)
     config_file.write_text("{}")
@@ -361,4 +361,5 @@ def test_gateway_uses_config_directory_for_cron_store(monkeypatch, tmp_path: Pat
 
     assert isinstance(result.exception, _StopGateway)
     assert seen["cron_store"] == config_file.parent / "cron" / "jobs.json"
+
 

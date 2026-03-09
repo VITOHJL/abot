@@ -1,4 +1,4 @@
-﻿"""Direct OpenAI-compatible provider 鈥?bypasses LiteLLM."""
+﻿"""Direct OpenAI-compatible provider - bypasses LiteLLM."""
 
 from __future__ import annotations
 
@@ -58,5 +58,7 @@ class CustomProvider(LLMProvider):
 
     def get_default_model(self) -> str:
         return self.default_model
+
+
 
 

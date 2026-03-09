@@ -5,10 +5,10 @@ def test_extract_post_content_supports_post_wrapper_shape() -> None:
     payload = {
         "post": {
             "zh_cn": {
-                "title": "鏃ユ姤",
+                "title": "日报",
                 "content": [
                     [
-                        {"tag": "text", "text": "瀹屾垚"},
+                        {"tag": "text", "text": "完成"},
                         {"tag": "img", "image_key": "img_1"},
                     ]
                 ],
@@ -18,7 +18,7 @@ def test_extract_post_content_supports_post_wrapper_shape() -> None:
 
     text, image_keys = _extract_post_content(payload)
 
-    assert text == "鏃ユ姤 瀹屾垚"
+    assert text == "日报 完成"
     assert image_keys == ["img_1"]
 
 
@@ -63,4 +63,5 @@ def test_register_optional_event_calls_supported_method() -> None:
 
     assert same is builder
     assert called == [handler]
+
 

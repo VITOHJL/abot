@@ -45,8 +45,9 @@ class Session:
         """
         Return messages for LLM input, aligned to a user turn.
 
-        - max_messages > 0 鏃跺彧淇濈暀鏈€杩?max_messages 鏉★紱
-        - max_messages <= 0 鏃朵笉鍋氭潯鏁版埅鏂紝杩斿洖鍏ㄩ儴娑堟伅銆?        """
+        - max_messages > 0 keeps only the latest ``max_messages`` messages.
+        - max_messages <= 0 returns the full message list without truncation.
+        """
         sliced = self.messages if max_messages <= 0 else self.messages[-max_messages:]
 
         # Drop leading non-user messages to avoid orphaned tool_result blocks
@@ -208,4 +209,5 @@ class SessionManager:
                 continue
 
         return sorted(sessions, key=lambda x: x.get("updated_at", ""), reverse=True)
+
 

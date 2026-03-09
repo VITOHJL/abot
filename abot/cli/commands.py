@@ -554,10 +554,10 @@ def agent(
             return
         if ch and not tool_hint and not ch.send_progress:
             return
-        console.print(f"  [dim]閳?{content}[/dim]")
+        console.print(f"  [dim]> {content}[/dim]")
 
     if message:
-        # Single message mode 閳?direct call, no bus needed
+        # Single message mode -> direct call, no bus needed
         async def run_once():
             with _thinking_ctx():
                 response = await agent_loop.process_direct(message, session_id, on_progress=_cli_progress)
@@ -567,7 +567,7 @@ def agent(
 
         asyncio.run(run_once())
     else:
-        # Interactive mode 閳?route through bus like other channels
+        # Interactive mode -> route through bus like other channels
         from abot.bus.events import InboundMessage
         _init_prompt_session()
         console.print(f"{__logo__} Interactive mode (type [bold]exit[/bold] or [bold]Ctrl+C[/bold] to quit)\n")
@@ -611,7 +611,7 @@ def agent(
                             elif ch and not is_tool_hint and not ch.send_progress:
                                 pass
                             else:
-                                console.print(f"  [dim]閳?{msg.content}[/dim]")
+                                console.print(f"  [dim]> {msg.content}[/dim]")
                         elif not turn_done.is_set():
                             if msg.content:
                                 turn_response.append(msg.content)
@@ -858,5 +858,6 @@ def _login_github_copilot() -> None:
 
 if __name__ == "__main__":
     app()
+
 
 

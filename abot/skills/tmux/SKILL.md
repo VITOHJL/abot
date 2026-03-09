@@ -1,7 +1,7 @@
 ﻿---
 name: tmux
 description: Remote-control tmux sessions for interactive CLIs by sending keystrokes and scraping pane output.
-metadata: {"abot":{"emoji":"馃У","os":["darwin","linux"],"requires":{"bins":["tmux"]}}}
+metadata: {"abot":{"emoji":"🧵","os":["darwin","linux"],"requires":{"bins":["tmux"]}}}
 ---
 
 # tmux Skill
@@ -83,7 +83,7 @@ tmux -S "$SOCKET" send-keys -t agent-2 "cd /tmp/project2 && codex --yolo 'Fix bu
 
 # Poll for completion (check if prompt returned)
 for sess in agent-1 agent-2; do
-  if tmux -S "$SOCKET" capture-pane -p -t "$sess" -S -3 | grep -q "鉂?; then
+  if tmux -S "$SOCKET" capture-pane -p -t "$sess" -S -3 | grep -Eq "[$] $|❯"; then
     echo "$sess: DONE"
   else
     echo "$sess: Running..."
@@ -97,7 +97,7 @@ tmux -S "$SOCKET" capture-pane -p -t agent-1 -S -500
 **Tips:**
 - Use separate git worktrees for parallel fixes (no branch conflicts)
 - `pnpm install` first before running codex in fresh clones
-- Check for shell prompt (`鉂痐 or `$`) to detect completion
+- Check for shell prompt (`$` or `❯`) to detect completion
 - Codex needs `--yolo` or `--full-auto` for non-interactive fixes
 
 ## Cleanup
@@ -119,4 +119,5 @@ tmux -S "$SOCKET" capture-pane -p -t agent-1 -S -500
 - `-T` timeout seconds (integer, default 15)
 - `-i` poll interval seconds (default 0.5)
 - `-l` history lines to search (integer, default 1000)
+
 

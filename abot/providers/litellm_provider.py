@@ -38,7 +38,7 @@ class LiteLLMProvider(LLMProvider):
     
     Supports OpenRouter, Anthropic, OpenAI, Gemini, MiniMax, and many other providers through
     a unified interface.  Provider-specific logic is driven by the registry
-    (see providers/registry.py) 鈥?no if-elif chains needed here.
+    (see providers/registry.py) - no if-elif chains needed here.
     """
 
     def __init__(
@@ -86,8 +86,8 @@ class LiteLLMProvider(LLMProvider):
             os.environ.setdefault(spec.env_key, api_key)
 
         # Resolve env_extras placeholders:
-        #   {api_key}  鈫?user's API key
-        #   {api_base} 鈫?user's api_base, falling back to spec.default_api_base
+        #   {api_key}  -> user's API key
+        #   {api_base} -> user's api_base, falling back to spec.default_api_base
         effective_base = api_base or spec.default_api_base
         for env_name, env_val in spec.env_extras:
             resolved = env_val.replace("{api_key}", api_key)
@@ -480,7 +480,7 @@ class LiteLLMProvider(LLMProvider):
         if self._supports_cache_control(original_model):
             messages, tools = self._apply_cache_control(messages, tools)
 
-        # Clamp max_tokens to at least 1 鈥?negative or zero values cause
+        # Clamp max_tokens to at least 1 - negative or zero values cause
         # LiteLLM to reject the request with "max_tokens must be at least 1".
         max_tokens = max(1, max_tokens)
 
@@ -494,7 +494,7 @@ class LiteLLMProvider(LLMProvider):
         # Apply model-specific overrides (e.g. kimi-k2.5 temperature)
         self._apply_model_overrides(model, kwargs)
 
-        # Pass api_key directly 鈥?more reliable than env vars alone
+        # Pass api_key directly - more reliable than env vars alone
         if self.api_key:
             kwargs["api_key"] = self.api_key
 
@@ -593,4 +593,5 @@ class LiteLLMProvider(LLMProvider):
     def get_default_model(self) -> str:
         """Get the default model."""
         return self.default_model
+
 

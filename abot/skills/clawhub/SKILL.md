@@ -2,7 +2,7 @@
 name: clawhub
 description: Search and install agent skills from ClawHub, the public skill registry.
 homepage: https://clawhub.ai
-metadata: {"abot":{"emoji":"馃"}}
+metadata: {"abot":{"emoji":"🧩"}}
 ---
 
 # ClawHub
@@ -12,7 +12,7 @@ Public skill registry for AI agents. Search by natural language (vector search).
 ## When to use
 
 Use this skill when the user asks any of:
-- "find a skill for 鈥?
+- "find a skill for <task>"
 - "search for skills"
 - "install a skill"
 - "what skills are available?"
@@ -49,6 +49,7 @@ npx --yes clawhub@latest list --workdir ~/.abot/workspace
 - Requires Node.js (`npx` comes with it).
 - No API key needed for search and install.
 - Login (`npx --yes clawhub@latest login`) is only required for publishing.
-- `--workdir ~/.abot/workspace` is critical 鈥?without it, skills install to the current directory instead of the abot workspace.
+- `--workdir ~/.abot/workspace` is critical; without it, skills install to the current directory instead of the abot workspace.
 - After install, remind the user to start a new session to load the skill.
+
 

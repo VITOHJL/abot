@@ -41,8 +41,8 @@ class HeartbeatService:
     """
     Periodic heartbeat service that wakes the agent to check for tasks.
 
-    Phase 1 (decision): reads HEARTBEAT.md and asks the LLM 鈥?via a virtual
-    tool call 鈥?whether there are active tasks.  This avoids free-text parsing
+    Phase 1 (decision): reads HEARTBEAT.md and asks the LLM - via a virtual
+    tool call - whether there are active tasks. This avoids free-text parsing
     and the unreliable HEARTBEAT_OK token.
 
     Phase 2 (execution): only triggered when Phase 1 returns ``run``.  The
@@ -171,4 +171,5 @@ class HeartbeatService:
         if action != "run" or not self.on_execute:
             return None
         return await self.on_execute(tasks)
+
 

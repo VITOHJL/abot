@@ -68,7 +68,7 @@ class TestMemoryConsolidationTypeHandling:
 
     @pytest.mark.asyncio
     async def test_dict_arguments_serialized_to_json(self, tmp_path: Path) -> None:
-        """Issue #1042: LLM returns dict instead of string 鈥?must not raise TypeError."""
+        """Issue #1042: LLM returns dict instead of string - must not raise TypeError."""
         store = MemoryStore(tmp_path)
         provider = AsyncMock()
         provider.chat = AsyncMock(
@@ -220,4 +220,5 @@ class TestMemoryConsolidationTypeHandling:
         result = await store.consolidate(session, provider, "test-model", memory_window=50)
 
         assert result is False
+
 

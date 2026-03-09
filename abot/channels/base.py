@@ -59,10 +59,10 @@ class BaseChannel(ABC):
         pass
 
     def is_allowed(self, sender_id: str) -> bool:
-        """Check if *sender_id* is permitted.  Empty list 鈫?deny all; ``"*"`` 鈫?allow all."""
+        """Check if *sender_id* is permitted. Empty list -> deny all; ``"*"`` -> allow all."""
         allow_list = getattr(self.config, "allow_from", [])
         if not allow_list:
-            logger.warning("{}: allow_from is empty 鈥?all access denied", self.name)
+            logger.warning("{}: allow_from is empty - all access denied", self.name)
             return False
         if "*" in allow_list:
             return True
@@ -114,4 +114,5 @@ class BaseChannel(ABC):
     def is_running(self) -> bool:
         """Check if the channel is running."""
         return self._running
+
 

@@ -714,7 +714,7 @@ class AgentLoop:
                 pass
         sub_cancelled = await self.subagents.cancel_by_session(msg.session_key)
         total = cancelled + sub_cancelled
-        content = f"鈴?Stopped {total} task(s)." if total else "No active task to stop."
+        content = f"Stopped {total} task(s)." if total else "No active task to stop."
         await self.bus.publish_outbound(OutboundMessage(
             channel=msg.channel, chat_id=msg.chat_id, content=content,
         ))
@@ -928,4 +928,5 @@ class AgentLoop:
         msg = InboundMessage(channel=channel, sender_id="user", chat_id=chat_id, content=content)
         response = await self._process_message(msg, session_key=session_key, on_progress=on_progress)
         return response.content if response else ""
+
 

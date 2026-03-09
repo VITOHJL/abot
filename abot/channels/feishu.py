@@ -345,7 +345,7 @@ class FeishuChannel(BaseChannel):
         """
         Stop the Feishu bot.
 
-        Notice: lark.ws.Client does not expose stop method锛?simply exiting the program will close the client.
+        Notice: lark.ws.Client does not expose a stop method; simply exiting the program closes the client.
 
         Reference: https://github.com/larksuite/oapi-sdk-python/blob/v2_main/lark_oapi/ws/client.py#L86
         """
@@ -490,7 +490,7 @@ class FeishuChannel(BaseChannel):
 
         return elements or [{"tag": "markdown", "content": content}]
 
-    # 鈹€鈹€ Smart format detection 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
+    # Smart format detection
     # Patterns that indicate "complex" markdown needing card rendering
     _COMPLEX_MD_RE = re.compile(
         r"```"                        # fenced code block
@@ -528,37 +528,37 @@ class FeishuChannel(BaseChannel):
         """Determine the optimal Feishu message format for *content*.
 
         Returns one of:
-        - ``"text"``        鈥?plain text, short and no markdown
-        - ``"post"``        鈥?rich text (links only, moderate length)
-        - ``"interactive"`` 鈥?card with full markdown rendering
+        - ``"text"``: plain text, short and no markdown
+        - ``"post"``: rich text (links only, moderate length)
+        - ``"interactive"``: card with full markdown rendering
         """
         stripped = content.strip()
 
-        # Complex markdown (code blocks, tables, headings) 鈫?always card
+        # Complex markdown (code blocks, tables, headings) -> always card
         if cls._COMPLEX_MD_RE.search(stripped):
             return "interactive"
 
-        # Long content 鈫?card (better readability with card layout)
+        # Long content -> card (better readability with card layout)
         if len(stripped) > cls._POST_MAX_LEN:
             return "interactive"
 
-        # Has bold/italic/strikethrough 鈫?card (post format can't render these)
+        # Has bold/italic/strikethrough -> card (post format can't render these)
         if cls._SIMPLE_MD_RE.search(stripped):
             return "interactive"
 
-        # Has list items 鈫?card (post format can't render list bullets well)
+        # Has list items -> card (post format can't render list bullets well)
         if cls._LIST_RE.search(stripped) or cls._OLIST_RE.search(stripped):
             return "interactive"
 
-        # Has links 鈫?post format (supports <a> tags)
+        # Has links -> post format (supports <a> tags)
         if cls._MD_LINK_RE.search(stripped):
             return "post"
 
-        # Short plain text 鈫?text format
+        # Short plain text -> text format
         if len(stripped) <= cls._TEXT_MAX_LEN:
             return "text"
 
-        # Medium plain text without any formatting 鈫?post format
+        # Medium plain text without any formatting -> post format
         return "post"
 
     @classmethod
@@ -592,7 +592,7 @@ class FeishuChannel(BaseChannel):
             if remaining:
                 elements.append({"tag": "text", "text": remaining})
 
-            # Empty line 鈫?empty paragraph for spacing
+            # Empty line -> empty paragraph for spacing
             if not elements:
                 elements.append({"tag": "text", "text": ""})
 
@@ -830,7 +830,7 @@ class FeishuChannel(BaseChannel):
                 fmt = self._detect_msg_format(msg.content)
 
                 if fmt == "text":
-                    # Short plain text 鈥?send as simple text message
+                    # Short plain text - send as simple text message
                     text_body = json.dumps({"text": msg.content.strip()}, ensure_ascii=False)
                     await loop.run_in_executor(
                         None, self._send_message_sync,
@@ -838,7 +838,7 @@ class FeishuChannel(BaseChannel):
                     )
 
                 elif fmt == "post":
-                    # Medium content with links 鈥?send as rich-text post
+                    # Medium content with links - send as rich-text post
                     post_body = self._markdown_to_post(msg.content)
                     await loop.run_in_executor(
                         None, self._send_message_sync,
@@ -846,7 +846,7 @@ class FeishuChannel(BaseChannel):
                     )
 
                 else:
-                    # Complex / long content 鈥?send as interactive card
+                    # Complex / long content - send as interactive card
                     elements = self._build_card_elements(msg.content)
                     for chunk in self._split_elements_by_table_limit(elements):
                         card = {"config": {"wide_screen_mode": True}, "elements": chunk}
@@ -983,4 +983,5 @@ class FeishuChannel(BaseChannel):
         """Ignore p2p-enter events when a user opens a bot chat."""
         logger.debug("Bot entered p2p chat (user opened chat window)")
         pass
+
 

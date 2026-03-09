@@ -26,7 +26,7 @@ def _resolve_path(
 class ReadFileTool(Tool):
     """Tool to read file contents."""
 
-    _MAX_CHARS = 128_000  # ~128 KB 鈥?prevents OOM from reading huge files into LLM context
+    _MAX_CHARS = 128_000  # ~128 KB - prevents OOM from reading huge files into LLM context
 
     def __init__(self, workspace: Path | None = None, allowed_dir: Path | None = None):
         self._workspace = workspace
@@ -57,7 +57,7 @@ class ReadFileTool(Tool):
                 return f"Error: Not a file: {path}"
 
             size = file_path.stat().st_size
-            if size > self._MAX_CHARS * 4:  # rough upper bound (UTF-8 chars 鈮?4 bytes)
+            if size > self._MAX_CHARS * 4:  # rough upper bound (UTF-8 chars <= 4 bytes)
                 return (
                     f"Error: File too large ({size:,} bytes). "
                     f"Use exec tool with head/tail/grep to read portions."
@@ -65,7 +65,10 @@ class ReadFileTool(Tool):
 
             content = file_path.read_text(encoding="utf-8")
             if len(content) > self._MAX_CHARS:
-                return content[: self._MAX_CHARS] + f"\n\n... (truncated 鈥?file is {len(content):,} chars, limit {self._MAX_CHARS:,})"
+                return (
+                    content[: self._MAX_CHARS]
+                    + f"\n\n... (truncated - file is {len(content):,} chars, limit {self._MAX_CHARS:,})"
+                )
             return content
         except PermissionError as e:
             return f"Error: {e}"
@@ -225,7 +228,7 @@ class ListDirTool(Tool):
 
             items = []
             for item in sorted(dir_path.iterdir()):
-                prefix = "馃搧 " if item.is_dir() else "馃搫 "
+                prefix = "[D] " if item.is_dir() else "[F] "
                 items.append(f"{prefix}{item.name}")
 
             if not items:
@@ -236,4 +239,5 @@ class ListDirTool(Tool):
             return f"Error: {e}"
         except Exception as e:
             return f"Error listing directory: {str(e)}"
+
 
