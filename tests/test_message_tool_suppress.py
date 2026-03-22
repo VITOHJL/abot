@@ -107,13 +107,37 @@ class TestMessageToolSuppressLogic:
         async def on_progress(content: str, *, tool_hint: bool = False) -> None:
             progress.append((content, tool_hint))
 
-        final_content, _, _ = await loop._run_agent_loop([], on_progress=on_progress)
+        final_content, _, _, _, _, _ = await loop._run_agent_loop([], on_progress=on_progress)
 
         assert final_content == "Done"
         assert progress == [
             ("Visible", False),
             ('read_file("foo.txt")', True),
         ]
+
+    @pytest.mark.asyncio
+    async def test_inline_image_from_tool_becomes_media_attachment(self, tmp_path: Path) -> None:
+        loop = _make_loop(tmp_path)
+        tool_call = ToolCallRequest(id="call1", name="fake_qr", arguments={})
+        calls = iter([
+            LLMResponse(content="", tool_calls=[tool_call]),
+            LLMResponse(content="二维码已就绪", tool_calls=[]),
+        ])
+        loop.provider.chat = AsyncMock(side_effect=lambda *a, **kw: next(calls))
+        loop.tools.get_definitions = MagicMock(return_value=[])
+        tiny_png = (
+            "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO5tN8sAAAAASUVORK5CYII="
+        )
+        loop.tools.execute = AsyncMock(
+            return_value=f"请扫码登录\ntype='image' data='{tiny_png}'"
+        )
+
+        msg = InboundMessage(channel="cli", sender_id="u1", chat_id="direct", content="给我二维码")
+        result = await loop._process_message(msg)
+
+        assert result is not None
+        assert len(result.media) == 1
+        assert Path(result.media[0]).exists()
 
 
 class TestMessageToolTurnTracking:
@@ -128,6 +152,8 @@ class TestMessageToolTurnTracking:
     def test_start_turn_resets(self) -> None:
         tool = MessageTool()
         tool._sent_in_turn = True
+        tool._sent_media_in_turn = True
         tool.start_turn()
         assert not tool._sent_in_turn
+        assert not tool._sent_media_in_turn
 

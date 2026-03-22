@@ -1,4 +1,4 @@
-﻿"""CLI commands for abot."""
+"""CLI commands for abot."""
 
 import asyncio
 import os
@@ -119,6 +119,100 @@ def _print_agent_response(response: str, render_markdown: bool) -> None:
     console.print(f"[cyan]{__logo__} abot[/cyan]")
     console.print(body)
     console.print()
+
+
+def _render_image_ascii(
+    path: Path,
+    max_width: int = 64,
+    terminal_width: int | None = None,
+    invert: bool | None = None,
+) -> bool:
+    """Render an image file in terminal using QR-friendly half-block glyphs."""
+    try:
+        from PIL import Image
+    except Exception:
+        return False
+
+    try:
+        img = Image.open(path).convert("L")
+        width, height = img.size
+        if width <= 0 or height <= 0:
+            return False
+        # NapCat-style QR rendering: combine two pixel rows into one terminal
+        # row via half-block chars, which keeps width compact.
+        term_w = terminal_width if terminal_width is not None else console.size.width
+        term_w = max(20, int(term_w))
+        max_modules_by_terminal = max(8, term_w - 4)
+        target_w = min(max_width, width, max_modules_by_terminal)
+        target_h = max(2, int(height * target_w / width))
+        if target_h % 2 == 1:
+            target_h += 1
+        img = img.resize((target_w, target_h), Image.NEAREST)
+
+        # Adaptive threshold works better across different QR exports.
+        extrema = img.getextrema()
+        thr = int((extrema[0] + extrema[1]) / 2)
+        bw = img.point(lambda p: 0 if p < thr else 255, mode="1")
+        px = bw.load()
+        # Keep original black/white mapping by default; users can opt-in
+        # inversion explicitly when needed.
+        use_invert = (
+            (os.environ.get("ABOT_QR_INVERT", "0") != "0")
+            if invert is None
+            else invert
+        )
+
+        # Use NapCat-style glyph palette so rendering does not depend on ANSI
+        # color support in the terminal.
+        lines: list[str] = []
+        has_ink = False
+        for y in range(0, bw.height, 2):
+            row: list[str] = []
+            for x in range(bw.width):
+                top_black = px[x, y] == 0
+                bottom_black = px[x, y + 1] == 0
+                top_on = (not top_black) if use_invert else top_black
+                bottom_on = (not bottom_black) if use_invert else bottom_black
+                if top_on and bottom_on:
+                    ch = "\u2588"
+                elif top_on and not bottom_on:
+                    ch = "\u2580"
+                elif (not top_on) and bottom_on:
+                    ch = "\u2584"
+                else:
+                    ch = " "
+                row.append(ch)
+                if top_on or bottom_on:
+                    has_ink = True
+            lines.append("".join(row))
+        if not lines or not has_ink:
+            return False
+        console.print("\n".join(lines), overflow="ignore", no_wrap=True)
+        return True
+    except Exception:
+        return False
+
+
+def _render_cli_media(media_paths: list[str]) -> None:
+    """Render or at least surface media attachments in CLI mode."""
+    if not media_paths:
+        return
+
+    image_exts = {".png", ".jpg", ".jpeg", ".webp", ".gif", ".bmp"}
+    for raw in media_paths:
+        path = Path(raw)
+        if not path.exists():
+            console.print(f"[yellow]Attachment not found:[/yellow] {path}")
+            continue
+        console.print(f"[cyan]Attachment:[/cyan] {path}")
+        if path.suffix.lower() in image_exts:
+            rendered = _render_image_ascii(path)
+            if not rendered and os.name == "nt":
+                try:
+                    os.startfile(str(path))  # type: ignore[attr-defined]
+                    console.print("[dim](Opened in system image viewer)[/dim]")
+                except Exception:
+                    pass
 
 
 def _is_exit_command(command: str) -> bool:
@@ -349,6 +443,7 @@ def gateway(
         session_manager=session_manager,
         mcp_servers=config.tools.mcp_servers,
         channels_config=config.channels,
+        memory_config=config.tools.memory,
     )
 
     # Set cron callback (needs agent)
@@ -538,6 +633,7 @@ def agent(
         restrict_to_workspace=config.tools.restrict_to_workspace,
         mcp_servers=config.tools.mcp_servers,
         channels_config=config.channels,
+        memory_config=config.tools.memory,
     )
 
     # Show spinner when logs are off (no output to miss); skip when logs are on
@@ -599,6 +695,17 @@ def agent(
             turn_done.set()
             turn_response: list[str] = []
 
+            def _agent_loop_failure() -> str | None:
+                if not bus_task.done():
+                    return None
+                try:
+                    exc = bus_task.exception()
+                except asyncio.CancelledError:
+                    return "Agent loop was cancelled."
+                if exc:
+                    return f"Agent loop crashed: {type(exc).__name__}: {exc}"
+                return "Agent loop stopped unexpectedly."
+
             async def _consume_outbound():
                 while True:
                     try:
@@ -615,10 +722,15 @@ def agent(
                         elif not turn_done.is_set():
                             if msg.content:
                                 turn_response.append(msg.content)
+                            if msg.media:
+                                _render_cli_media(msg.media)
                             turn_done.set()
-                        elif msg.content:
-                            console.print()
-                            _print_agent_response(msg.content, render_markdown=markdown)
+                        else:
+                            if msg.content:
+                                console.print()
+                                _print_agent_response(msg.content, render_markdown=markdown)
+                            if msg.media:
+                                _render_cli_media(msg.media)
                     except asyncio.TimeoutError:
                         continue
                     except asyncio.CancelledError:
@@ -629,6 +741,9 @@ def agent(
             try:
                 while True:
                     try:
+                        if loop_err := _agent_loop_failure():
+                            raise RuntimeError(loop_err)
+
                         _flush_pending_tty_input()
                         user_input = await _read_interactive_input_async()
                         command = user_input.strip()
@@ -651,10 +766,20 @@ def agent(
                         ))
 
                         with _thinking_ctx():
-                            await turn_done.wait()
+                            while not turn_done.is_set():
+                                if loop_err := _agent_loop_failure():
+                                    raise RuntimeError(loop_err)
+                                try:
+                                    await asyncio.wait_for(turn_done.wait(), timeout=0.2)
+                                except asyncio.TimeoutError:
+                                    continue
 
                         if turn_response:
                             _print_agent_response(turn_response[0], render_markdown=markdown)
+                    except RuntimeError as e:
+                        _restore_terminal()
+                        console.print(f"\n[red]{e}[/red]")
+                        break
                     except KeyboardInterrupt:
                         _restore_terminal()
                         console.print("\nGoodbye!")

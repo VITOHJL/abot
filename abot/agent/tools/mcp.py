@@ -55,12 +55,15 @@ class MCPToolWrapper(Tool):
 
 async def connect_mcp_servers(
     mcp_servers: dict, registry: ToolRegistry, stack: AsyncExitStack
-) -> None:
-    """Connect to configured MCP servers and register their tools."""
+) -> tuple[int, int]:
+    """Connect to MCP servers and return (connected_servers, registered_tools)."""
     from mcp import ClientSession, StdioServerParameters
     from mcp.client.sse import sse_client
     from mcp.client.stdio import stdio_client
     from mcp.client.streamable_http import streamable_http_client
+
+    connected_servers = 0
+    registered_tools = 0
 
     for name, cfg in mcp_servers.items():
         try:
@@ -118,14 +121,18 @@ async def connect_mcp_servers(
 
             session = await stack.enter_async_context(ClientSession(read, write))
             await session.initialize()
+            connected_servers += 1
 
             tools = await session.list_tools()
             for tool_def in tools.tools:
                 wrapper = MCPToolWrapper(session, name, tool_def, tool_timeout=cfg.tool_timeout)
                 registry.register(wrapper)
+                registered_tools += 1
                 logger.debug("MCP: registered tool '{}' from server '{}'", wrapper.name, name)
 
             logger.info("MCP server '{}': connected, {} tools registered", name, len(tools.tools))
         except Exception as e:
             logger.error("MCP server '{}': failed to connect: {}", name, e)
+
+    return connected_servers, registered_tools
 

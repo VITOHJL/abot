@@ -95,11 +95,13 @@ class TestDispatch:
         from abot.bus.events import InboundMessage, OutboundMessage
 
         loop, bus = _make_loop()
+        loop._connect_mcp = AsyncMock(return_value=(0, 0))
         msg = InboundMessage(channel="test", sender_id="u1", chat_id="c1", content="hello")
         loop._process_message = AsyncMock(
             return_value=OutboundMessage(channel="test", chat_id="c1", content="hi")
         )
         await loop._dispatch(msg)
+        loop._connect_mcp.assert_awaited_once()
         out = await asyncio.wait_for(bus.consume_outbound(), timeout=1.0)
         assert out.content == "hi"
 
@@ -108,6 +110,7 @@ class TestDispatch:
         from abot.bus.events import InboundMessage, OutboundMessage
 
         loop, bus = _make_loop()
+        loop._connect_mcp = AsyncMock(return_value=(0, 0))
         order = []
 
         async def mock_process(m, **kwargs):
@@ -124,6 +127,86 @@ class TestDispatch:
         t2 = asyncio.create_task(loop._dispatch(msg2))
         await asyncio.gather(t1, t2)
         assert order == ["start-a", "end-a", "start-b", "end-b"]
+        assert loop._connect_mcp.await_count == 2
+
+
+class TestMCPConnect:
+    @pytest.mark.asyncio
+    async def test_connect_mcp_keeps_retry_if_no_server_connected(self):
+        loop, _ = _make_loop()
+        loop._mcp_servers = {"xiaohongshu": object()}
+
+        with patch(
+            "abot.agent.tools.mcp.connect_mcp_servers",
+            AsyncMock(return_value=(0, 0)),
+        ):
+            servers, tools = await loop._connect_mcp()
+
+        assert (servers, tools) == (0, 0)
+        assert loop._mcp_connected is False
+        assert loop._mcp_stack is None
+        assert loop._mcp_connecting is False
+
+    @pytest.mark.asyncio
+    async def test_connect_mcp_marks_connected_on_success(self):
+        loop, _ = _make_loop()
+        loop._mcp_servers = {"xiaohongshu": object()}
+
+        with patch(
+            "abot.agent.tools.mcp.connect_mcp_servers",
+            AsyncMock(return_value=(1, 4)),
+        ):
+            servers, tools = await loop._connect_mcp()
+
+        assert (servers, tools) == (1, 4)
+        assert loop._mcp_connected is True
+        assert loop._mcp_connected_servers == 1
+        assert loop._mcp_registered_tools == 4
+        await loop.close_mcp()
+
+    @pytest.mark.asyncio
+    async def test_connect_mcp_handles_cancelled_error(self):
+        loop, _ = _make_loop()
+        loop._mcp_servers = {"xiaohongshu": object()}
+
+        with patch(
+            "abot.agent.tools.mcp.connect_mcp_servers",
+            AsyncMock(side_effect=asyncio.CancelledError("mcp init cancelled")),
+        ):
+            await loop._connect_mcp()
+
+        assert loop._mcp_connected is False
+        assert loop._mcp_stack is None
+        assert loop._mcp_connecting is False
+
+    @pytest.mark.asyncio
+    async def test_reload_mcp_removes_old_tools_and_reconnects(self):
+        loop, _ = _make_loop()
+        loop._mcp_servers = {"xiaohongshu": object()}
+
+        class _DummyTool:
+            def __init__(self, tool_name: str):
+                self.name = tool_name
+
+            def to_schema(self):
+                return {}
+
+            def cast_params(self, params):
+                return params
+
+            def validate_params(self, _params):
+                return []
+
+        loop.tools.register(_DummyTool("mcp_xiaohongshu_oldtool"))
+        loop.tools.register(_DummyTool("exec"))
+
+        loop._connect_mcp = AsyncMock(return_value=(1, 2))
+        removed, servers, tools = await loop.reload_mcp()
+
+        assert removed == 1
+        assert (servers, tools) == (1, 2)
+        assert loop.tools.has("exec")
+        assert not loop.tools.has("mcp_xiaohongshu_oldtool")
 
 
 class TestSubagentCancellation:

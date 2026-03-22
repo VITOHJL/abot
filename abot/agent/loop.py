@@ -1,13 +1,16 @@
-﻿"""Agent loop: the core processing engine."""
+"""Agent loop: the core processing engine."""
 
 from __future__ import annotations
 
 import asyncio
+import base64
+import hashlib
 import json
 import re
 from contextlib import AsyncExitStack
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Awaitable, Callable
+from uuid import uuid4
 
 from loguru import logger
 
@@ -17,9 +20,12 @@ except Exception:  # pragma: no cover - optional dependency
     tiktoken = None
 
 from abot.agent.context import ContextBuilder
+from abot.agent.memory.db_store import JSONLTurnStore
+from abot.agent.memory.rag_store import RagStore
 from abot.agent.subagent import SubagentManager
 from abot.agent.tools.cron import CronTool
 from abot.agent.tools.filesystem import EditFileTool, ListDirTool, ReadFileTool, WriteFileTool
+from abot.agent.tools.memory import GetTurnDetailTool, SearchMemoryTool
 from abot.agent.tools.huggingface import HuggingFaceModelSearchTool
 from abot.agent.tools.message import MessageTool
 from abot.agent.tools.model_config import ValidateDeployJSONTool, ValidateUsageYAMLTool
@@ -31,9 +37,10 @@ from abot.bus.events import InboundMessage, OutboundMessage
 from abot.bus.queue import MessageBus
 from abot.providers.base import LLMProvider
 from abot.session.manager import Session, SessionManager
+from abot.utils.helpers import detect_image_mime, safe_filename
 
 if TYPE_CHECKING:
-    from abot.config.schema import ChannelsConfig, ExecToolConfig
+    from abot.config.schema import ChannelsConfig, ExecToolConfig, MemoryConfig
     from abot.cron.service import CronService
 
 
@@ -50,6 +57,10 @@ class AgentLoop:
     """
 
     _TOOL_RESULT_MAX_CHARS = 500
+    _INLINE_IMAGE_RE = re.compile(
+        r"type\s*=\s*['\"]image['\"]\s*data\s*=\s*['\"](?P<data>[A-Za-z0-9+/=\s]+?)['\"]",
+        flags=re.IGNORECASE,
+    )
 
     def __init__(
         self,
@@ -73,6 +84,7 @@ class AgentLoop:
         session_manager: SessionManager | None = None,
         mcp_servers: dict | None = None,
         channels_config: ChannelsConfig | None = None,
+        memory_config: MemoryConfig | None = None,
     ):
         from abot.config.schema import ExecToolConfig
         self.bus = bus
@@ -102,6 +114,13 @@ class AgentLoop:
 
         self.context = ContextBuilder(workspace)
         self.sessions = session_manager or SessionManager(workspace)
+        self.turn_store = JSONLTurnStore(workspace)
+        _embedding = None
+        if memory_config and memory_config.embedding_model:
+            from abot.agent.memory.embedding import create_embedding_provider
+
+            _embedding = create_embedding_provider(memory_config.embedding_model)
+        self.rag_store = RagStore(workspace, embedding_provider=_embedding)
         self.tools = ToolRegistry()
         self.subagents = SubagentManager(
             provider=provider,
@@ -122,6 +141,8 @@ class AgentLoop:
         self._mcp_stack: AsyncExitStack | None = None
         self._mcp_connected = False
         self._mcp_connecting = False
+        self._mcp_connected_servers = 0
+        self._mcp_registered_tools = 0
         self._active_tasks: dict[str, list[asyncio.Task]] = {}  # session_key -> tasks
         self._compression_tasks: dict[str, asyncio.Task] = {}  # session_key -> task
         self._processing_lock = asyncio.Lock()
@@ -256,6 +277,27 @@ class AgentLoop:
                 pass
         return max(1, len(payload) // 4)
 
+    @staticmethod
+    def _split_into_turns(messages: list[dict[str, Any]]) -> list[tuple[int, int, list[dict[str, Any]]]]:
+        """
+        Split messages into turns. A turn = from role=user to (exclusive of) next role=user.
+
+        Returns list of (start_idx, end_idx, turn_messages) in original message indices.
+        """
+        turns: list[tuple[int, int, list[dict[str, Any]]]] = []
+        i = 0
+        while i < len(messages):
+            if messages[i].get("role") != "user":
+                i += 1
+                continue
+            start = i
+            i += 1
+            while i < len(messages) and messages[i].get("role") != "user":
+                i += 1
+            end = i
+            turns.append((start, end, messages[start:end]))
+        return turns
+
     def _pick_compression_chunk_by_tokens(
         self,
         session: Session,
@@ -264,31 +306,37 @@ class AgentLoop:
         tail_keep: int = 12,
     ) -> tuple[int, int, int] | None:
         """
-        Pick one contiguous old chunk so its estimated size is roughly enough
-        to reduce `reduction_tokens`.
+        Pick a contiguous chunk of complete turns so its estimated size is roughly enough
+        to reduce `reduction_tokens`. Never cuts in the middle of a turn.
         """
         messages = session.messages
         start = self._get_compressed_until(session)
-        if len(messages) - start <= tail_keep + 2:
-            return None
-
         end_limit = len(messages) - tail_keep
         if end_limit - start < 2:
             return None
 
-        target = max(1, reduction_tokens)
-        end = start
-        collected = 0
-        while end < end_limit and collected < target:
-            collected += self._estimate_message_tokens(messages[end])
-            end += 1
-
-        if end - start < 2:
-            end = min(end_limit, start + 2)
-            collected = sum(self._estimate_message_tokens(m) for m in messages[start:end])
-        if end - start < 2:
+        turns = self._split_into_turns(messages)
+        # Only consider turns fully within [start, end_limit)
+        turns_in_region = [(s, e, t) for s, e, t in turns if s >= start and e <= end_limit]
+        if not turns_in_region:
             return None
-        return start, end, collected
+
+        target = max(1, reduction_tokens)
+        collected = 0
+        last_end = start
+        for s, e, turn_msgs in turns_in_region:
+            turn_tokens = sum(self._estimate_message_tokens(m) for m in turn_msgs)
+            collected += turn_tokens
+            last_end = e
+            if collected >= target:
+                break
+
+        if last_end <= start:
+            return None
+        total_tokens = sum(
+            self._estimate_message_tokens(m) for m in messages[start:last_end]
+        )
+        return start, last_end, total_tokens
 
     def _estimate_session_prompt_tokens(self, session: Session) -> tuple[int, str]:
         """
@@ -331,12 +379,14 @@ class AgentLoop:
             return
         if current_tokens < start_threshold:
             logger.debug(
-                "Compression idle {}: {}/{} ({:.1%}) via {}",
+                "Compression idle {}: {}/{} ({:.1%}) via {} (threshold={:.0%}, need {} more)",
                 session.key,
                 current_tokens,
                 budget,
                 current_ratio,
                 token_source,
+                self.compression_start_ratio,
+                start_threshold - current_tokens,
             )
             return
         logger.info(
@@ -362,20 +412,40 @@ class AgentLoop:
         if len(chunk) < 2:
             return
 
+        turns_with_indices = self._split_into_turns(chunk)
+        if not turns_with_indices:
+            return
+
+        # Extract just the message lists: (start, end, msgs) -> msgs
+        turns = [t[2] for t in turns_with_indices]
+
         logger.info(
-            "Compression chunk {}: msgs {}-{} (count={}, est~{}, need~{})",
+            "Compression chunk {}: msgs {}-{} ({} turns, est~{}, need~{})",
             session.key,
             start_idx,
             end_idx - 1,
-            len(chunk),
+            len(turns),
             estimated_chunk_tokens,
             reduction_need,
         )
-        success, _ = await self.context.memory.consolidate_chunk(
-            chunk,
-            self.provider,
-            self.model,
+
+        async def _consolidate() -> bool:
+            success, _ = await self.context.memory.consolidate_chunk(
+                chunk,
+                self.provider,
+                self.model,
+            )
+            return success
+
+        def _save_turns_and_index() -> None:
+            turn_ids = self.turn_store.save_turns(turns, session.key)
+            self.rag_store.index_turns(turns, session.key, turn_ids)
+
+        results = await asyncio.gather(
+            _consolidate(),
+            asyncio.to_thread(_save_turns_and_index),
         )
+        success = results[0]
         if not success:
             logger.warning("Compression aborted for {}: consolidation failed", session.key)
             return
@@ -458,8 +528,8 @@ class AgentLoop:
         notice_msg: dict[str, Any] = {
             "role": "assistant",
             "content": (
-                "As your assistant, I have compressed earlier context. "
-                "If you need details, please check memory/HISTORY.md."
+                "Earlier context has been compressed. Use the search_memory tool to recall "
+                "past conversations, and get_turn_detail to view full implementation when needed."
             ),
         }
 
@@ -497,32 +567,78 @@ class AgentLoop:
         ))
         self.tools.register(WebSearchTool(api_key=self.brave_api_key, proxy=self.web_proxy))
         self.tools.register(WebFetchTool(proxy=self.web_proxy))
+        self.tools.register(SearchMemoryTool(turn_store=self.turn_store, rag_store=self.rag_store))
+        self.tools.register(GetTurnDetailTool(turn_store=self.turn_store))
         self.tools.register(MessageTool(send_callback=self.bus.publish_outbound))
         self.tools.register(SpawnTool(manager=self.subagents))
         if self.cron_service:
             self.tools.register(CronTool(self.cron_service))
 
-    async def _connect_mcp(self) -> None:
-        """Connect to configured MCP servers (one-time, lazy)."""
-        if self._mcp_connected or self._mcp_connecting or not self._mcp_servers:
-            return
+    def _list_mcp_tools(self) -> list[str]:
+        """List currently-registered MCP tool names."""
+        return [name for name in self.tools.tool_names if name.startswith("mcp_")]
+
+    async def _connect_mcp(self) -> tuple[int, int]:
+        """Connect to configured MCP servers and return (servers, tools)."""
+        if not self._mcp_servers:
+            return 0, 0
+        if self._mcp_connected or self._mcp_connecting:
+            return self._mcp_connected_servers, self._mcp_registered_tools
         self._mcp_connecting = True
         from abot.agent.tools.mcp import connect_mcp_servers
         try:
             self._mcp_stack = AsyncExitStack()
             await self._mcp_stack.__aenter__()
-            await connect_mcp_servers(self._mcp_servers, self.tools, self._mcp_stack)
-            self._mcp_connected = True
-        except Exception as e:
-            logger.error("Failed to connect MCP servers (will retry next message): {}", e)
+            connected_servers, registered_tools = await connect_mcp_servers(
+                self._mcp_servers, self.tools, self._mcp_stack
+            )
+            if connected_servers > 0:
+                self._mcp_connected = True
+                self._mcp_connected_servers = connected_servers
+                self._mcp_registered_tools = registered_tools
+            else:
+                logger.warning("No MCP servers connected (will retry next message).")
+                self._mcp_connected = False
+                self._mcp_connected_servers = 0
+                self._mcp_registered_tools = 0
+                if self._mcp_stack:
+                    try:
+                        await self._mcp_stack.aclose()
+                    except Exception:
+                        pass
+                    self._mcp_stack = None
+        except (KeyboardInterrupt, SystemExit):
+            raise
+        except BaseException as e:
+            # Some MCP transports surface failures as CancelledError/BaseExceptionGroup.
+            # Treat any non-fatal startup failure as "MCP unavailable" and continue.
+            logger.error(
+                "Failed to connect MCP servers (will retry next message): {}: {}",
+                type(e).__name__,
+                e,
+            )
             if self._mcp_stack:
                 try:
                     await self._mcp_stack.aclose()
                 except Exception:
                     pass
                 self._mcp_stack = None
+            self._mcp_connected = False
+            self._mcp_connected_servers = 0
+            self._mcp_registered_tools = 0
         finally:
             self._mcp_connecting = False
+        return self._mcp_connected_servers, self._mcp_registered_tools
+
+    async def reload_mcp(self) -> tuple[int, int, int]:
+        """Reload MCP sessions and tool registrations."""
+        removed = 0
+        for tool_name in self._list_mcp_tools():
+            self.tools.unregister(tool_name)
+            removed += 1
+        await self.close_mcp()
+        servers, tools = await self._connect_mcp()
+        return removed, servers, tools
 
     def _set_tool_context(self, channel: str, chat_id: str, message_id: str | None = None) -> None:
         """Update context for all tools that need routing info."""
@@ -530,6 +646,62 @@ class AgentLoop:
             if tool := self.tools.get(name):
                 if hasattr(tool, "set_context"):
                     tool.set_context(channel, chat_id, *([message_id] if name == "message" else []))
+
+    def _decode_inline_image_blocks(
+        self, tool_name: str, result: str, channel: str
+    ) -> tuple[str, list[str]]:
+        """
+        Decode tool outputs like: type='image' data='<base64...>' to local files.
+
+        Returns:
+            (cleaned_result_text, saved_media_paths)
+        """
+        if not result or "type='image'" not in result and 'type="image"' not in result:
+            return result, []
+
+        from abot.config.paths import get_media_dir
+
+        media_dir = get_media_dir(channel)
+        saved_media: list[str] = []
+
+        def _replace(match: re.Match[str]) -> str:
+            raw_b64 = re.sub(r"\s+", "", match.group("data") or "")
+            if not raw_b64:
+                return match.group(0)
+            try:
+                blob = base64.b64decode(raw_b64, validate=True)
+            except Exception:
+                return match.group(0)
+
+            mime = detect_image_mime(blob) or "image/png"
+            ext = {
+                "image/png": "png",
+                "image/jpeg": "jpg",
+                "image/gif": "gif",
+                "image/webp": "webp",
+            }.get(mime, "bin")
+
+            tool_stub = safe_filename(tool_name or "mcp")
+            digest = hashlib.sha1(blob).hexdigest()[:10]
+            filename = f"{tool_stub}_{digest}_{uuid4().hex[:8]}.{ext}"
+            out_path = media_dir / filename
+
+            try:
+                out_path.write_bytes(blob)
+            except Exception:
+                return match.group(0)
+
+            saved_media.append(str(out_path))
+            return f"type='image' file='{out_path}'"
+
+        cleaned = self._INLINE_IMAGE_RE.sub(_replace, result)
+        if saved_media:
+            cleaned += (
+                "\n\n[Decoded image file(s) for display]\n"
+                + "\n".join(saved_media)
+                + "\n\nIf needed, send them with message(media=[...])."
+            )
+        return cleaned, saved_media
 
     @staticmethod
     def _strip_think(text: str | None) -> str | None:
@@ -553,7 +725,8 @@ class AgentLoop:
         self,
         initial_messages: list[dict],
         on_progress: Callable[..., Awaitable[None]] | None = None,
-    ) -> tuple[str | None, list[str], list[dict], int, str]:
+        channel: str = "cli",
+    ) -> tuple[str | None, list[str], list[dict], int, str, list[str]]:
         """
         Run the agent iteration loop.
 
@@ -569,6 +742,7 @@ class AgentLoop:
         tools_used: list[str] = []
         total_tokens_this_turn = 0
         token_source = "none"
+        generated_media: list[str] = []
 
         while iteration < self.max_iterations:
             iteration += 1
@@ -654,6 +828,17 @@ class AgentLoop:
                     args_str = json.dumps(tool_call.arguments, ensure_ascii=False)
                     logger.info("Tool call: {}({})", tool_call.name, args_str[:200])
                     result = await self.tools.execute(tool_call.name, tool_call.arguments)
+                    result, media_paths = self._decode_inline_image_blocks(
+                        tool_call.name, result, channel
+                    )
+                    if media_paths:
+                        generated_media.extend(media_paths)
+                    # If MCP was unavailable and the model starts it via `exec`,
+                    # connect immediately so MCP tools are usable in the same turn.
+                    if (tool_call.name == "exec"
+                            and self._mcp_servers
+                            and not self._mcp_connected):
+                        await self._connect_mcp()
                     messages = self.context.add_tool_result(
                         messages, tool_call.id, tool_call.name, result
                     )
@@ -679,7 +864,14 @@ class AgentLoop:
                 "without completing the task. You can try breaking the task into smaller steps."
             )
 
-        return final_content, tools_used, messages, total_tokens_this_turn, token_source
+        return (
+            final_content,
+            tools_used,
+            messages,
+            total_tokens_this_turn,
+            token_source,
+            generated_media,
+        )
 
     async def run(self) -> None:
         """Run the agent loop, dispatching messages as tasks to stay responsive to /stop."""
@@ -723,6 +915,7 @@ class AgentLoop:
         """Process a message under the global lock."""
         async with self._processing_lock:
             try:
+                await self._connect_mcp()
                 response = await self._process_message(msg)
                 if response is not None:
                     await self.bus.publish_outbound(response)
@@ -749,6 +942,10 @@ class AgentLoop:
             except (RuntimeError, BaseExceptionGroup):
                 pass  # MCP SDK cancel scope cleanup is noisy but harmless
             self._mcp_stack = None
+        self._mcp_connected = False
+        self._mcp_connecting = False
+        self._mcp_connected_servers = 0
+        self._mcp_registered_tools = 0
 
     def stop(self) -> None:
         """Stop the agent loop."""
@@ -778,12 +975,19 @@ class AgentLoop:
                 history=history,
                 current_message=msg.content, channel=channel, chat_id=chat_id,
             )
-            final_content, _, all_msgs, _, _ = await self._run_agent_loop(messages)
+            final_content, _, all_msgs, _, _, generated_media = await self._run_agent_loop(
+                messages,
+                channel=channel,
+            )
             self._save_turn(session, all_msgs, 1 + len(history))
             self.sessions.save(session)
             self._schedule_background_compression(session.key)
-            return OutboundMessage(channel=channel, chat_id=chat_id,
-                                  content=final_content or "Background task completed.")
+            return OutboundMessage(
+                channel=channel,
+                chat_id=chat_id,
+                content=final_content or "Background task completed.",
+                media=generated_media,
+            )
 
         preview = msg.content[:80] + "..." if len(msg.content) > 80 else msg.content
         logger.info("Processing message from {}:{}: {}", msg.channel, msg.sender_id, preview)
@@ -797,6 +1001,8 @@ class AgentLoop:
             try:
                 # Archive existing conversation before clearing the session.
                 if session.messages:
+                    turns_with_indices = self._split_into_turns(session.messages)
+                    turns = [t[2] for t in turns_with_indices]
                     ok, _ = await self.context.memory.consolidate_chunk(
                         session.messages,
                         self.provider,
@@ -808,6 +1014,9 @@ class AgentLoop:
                             chat_id=msg.chat_id,
                             content="Memory archival failed, session not cleared. Please try again.",
                         )
+                    if turns:
+                        turn_ids = self.turn_store.save_turns(turns, session.key)
+                        self.rag_store.index_turns(turns, session.key, turn_ids)
             except Exception:
                 logger.exception("/new archival failed for {}", session.key)
                 return OutboundMessage(
@@ -829,8 +1038,28 @@ class AgentLoop:
                     "abot commands:\n"
                     "/new - Start a new conversation\n"
                     "/stop - Stop the current task\n"
+                    "/mcp-reload - Reconnect MCP servers and reload MCP tools\n"
                     "/help - Show available commands"
                 ),
+            )
+        if cmd in ("/mcp-reload", "/mcp_reload"):
+            if not self._mcp_servers:
+                return OutboundMessage(
+                    channel=msg.channel,
+                    chat_id=msg.chat_id,
+                    content="No MCP servers are configured.",
+                )
+            removed, servers, tools = await self.reload_mcp()
+            status = (
+                f"MCP reload done: removed {removed} tool(s), "
+                f"connected {servers} server(s), registered {tools} tool(s)."
+            )
+            if servers == 0:
+                status += " MCP is still unavailable; retry after starting the server."
+            return OutboundMessage(
+                channel=msg.channel,
+                chat_id=msg.chat_id,
+                content=status,
             )
 
         self._set_tool_context(msg.channel, msg.chat_id, msg.metadata.get("message_id"))
@@ -859,8 +1088,10 @@ class AgentLoop:
                 channel=msg.channel, chat_id=msg.chat_id, content=content, metadata=meta,
             ))
 
-        final_content, _, all_msgs, _, _ = await self._run_agent_loop(
-            initial_messages, on_progress=on_progress or _bus_progress,
+        final_content, _, all_msgs, _, _, generated_media = await self._run_agent_loop(
+            initial_messages,
+            on_progress=on_progress or _bus_progress,
+            channel=msg.channel,
         )
 
         if final_content is None:
@@ -871,12 +1102,23 @@ class AgentLoop:
         self._schedule_background_compression(session.key)
 
         if (mt := self.tools.get("message")) and isinstance(mt, MessageTool) and mt._sent_in_turn:
+            if generated_media and not mt._sent_media_in_turn:
+                await self.bus.publish_outbound(
+                    OutboundMessage(
+                        channel=msg.channel,
+                        chat_id=msg.chat_id,
+                        content="[image attachment]",
+                        media=generated_media,
+                        metadata=msg.metadata or {},
+                    )
+                )
             return None
 
         preview = final_content[:120] + "..." if len(final_content) > 120 else final_content
         logger.info("Response to {}:{}: {}", msg.channel, msg.sender_id, preview)
         return OutboundMessage(
             channel=msg.channel, chat_id=msg.chat_id, content=final_content,
+            media=generated_media,
             metadata=msg.metadata or {},
         )
 

@@ -1,4 +1,4 @@
-﻿"""Context builder for assembling agent prompts."""
+"""Context builder for assembling agent prompts."""
 
 import base64
 import mimetypes
@@ -94,7 +94,7 @@ You are abot, a helpful AI assistant.
 ## Workspace
 Your workspace is at: {workspace_path}
 - Long-term memory: {workspace_path}/memory/MEMORY.md (write important facts here)
-- History log: {workspace_path}/memory/HISTORY.md (grep-searchable). Each entry starts with [YYYY-MM-DD HH:MM].
+- Past conversations: use search_memory to recall, get_turn_detail for full implementation
 - Custom skills: {workspace_path}/skills/{{skill-name}}/SKILL.md
 
 {platform_policy}

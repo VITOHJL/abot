@@ -1,4 +1,4 @@
-﻿"""Configuration schema using Pydantic."""
+"""Configuration schema using Pydantic."""
 
 from pathlib import Path
 from typing import Literal
@@ -162,9 +162,19 @@ class MCPServerConfig(Base):
     tool_timeout: int = 30  # seconds before a tool call is cancelled
 
 
+class MemoryConfig(Base):
+    """Memory storage configuration (turn store, RAG)."""
+
+    turn_store: str = "jsonl"  # jsonl | sqlite
+    rag_store: str = "jsonl"  # jsonl | none
+    embedding_model: str = ""  # Optional: for vector search. Empty = disabled. e.g. paraphrase-multilingual-MiniLM-L12-v2
+    use_hybrid_search: bool = True  # When embedding enabled: combine keyword + vector
+
+
 class ToolsConfig(Base):
     """Tools configuration."""
 
+    memory: MemoryConfig = Field(default_factory=MemoryConfig)
     web: WebToolsConfig = Field(default_factory=WebToolsConfig)
     exec: ExecToolConfig = Field(default_factory=ExecToolConfig)
     restrict_to_workspace: bool = False  # If true, restrict all tool access to workspace directory
